@@ -11,8 +11,10 @@ def _log(msg: str, tag=TAG) -> None:
     print(f'[{tag}] | {msg}')
 
 def uiautomator2_connection(serial=None, setup=False) -> Device:
+    _log('Connection with the Android device')
     device = u2.connect(serial)  # connect to device
     if setup:
+        _log('Performing Android setup')
         try:
             device.press('recent')
             time.sleep(1)
@@ -54,6 +56,10 @@ def find_and_tap_widget(widget_info: dict) -> None:
     except:
         _log('[WARNING][BUGFIX] | Unable to find widget')
 
+def type_input(text: str) -> None:
+    device = uiautomator2_connection()
+    device.shell(f'input text "{text}"')
+    device.press('enter')
 
 
 if __name__ == '__main__':

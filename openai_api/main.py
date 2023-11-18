@@ -36,7 +36,7 @@ def start_new_thread() -> Thread:
 
 
 def attach_new_message_content_in_thread(thread: Thread, content="") -> ThreadMessage:
-    _log(f'Attaching a new message to the Thread: {content}')
+    _log(f'Attaching a new message to the Thread: {thread.id}')
     return client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
@@ -68,7 +68,6 @@ async def _thread_run_state(thread: Thread, run: Run, timeout=20) -> bool:
         is_running = run.status == 'in_progress'
         _log(f'object run state directly: {run.status}')
         await asyncio.sleep(3)
-
 
     return is_running
 
