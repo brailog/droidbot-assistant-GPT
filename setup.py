@@ -5,8 +5,9 @@ setup(
     version='0.1',
     packages=find_packages(),
     install_requires=[
-        'uiautomator2',
-        'openai'
+        'uiautomator2==2.16.23',
+        'openai',
+        'packaging==20.9'
     ],
     entry_points={
         'console_scripts': [

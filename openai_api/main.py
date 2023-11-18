@@ -94,6 +94,15 @@ async def wait_for_condition(thread: Thread, run: Run,) -> SyncCursorPage[Thread
 def _log(msg: str, tag=TAG) -> None:
     print(f'[{tag}] | {msg}')
 
+
+def assistant_playground(prompt_input: str, assistant_key: str):
+    thread = start_new_thread()
+    attach_new_message_content_in_thread(thread, prompt_input)
+    run = run_thread(thread, assistant_key)
+
+    prompt_output = asyncio.run(wait_for_condition(thread, run))
+    return prompt_output.data
+
 def main():
     thread = start_new_thread()
     message = attach_new_message_content_in_thread(thread, "I need to solve the equation `3x + 11 = 14`. Can you help me?")
