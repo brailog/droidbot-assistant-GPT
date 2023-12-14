@@ -6,6 +6,7 @@ NAME_TO_PACKAGE = {
     "galeria": "com.sec.android.gallery3d",
     "camera": "com.sec.android.app.camera",
     "whatsapp": "com.whatsapp",
+    "phone": "com.samsung.android.dialer"
 }
 
 # ANDROID ACTION MATCH
