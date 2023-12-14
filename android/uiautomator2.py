@@ -30,7 +30,7 @@ def uiautomator2_connection(serial=None, setup=False) -> Device:
 
 def start_app(app_name: str) -> None:
     device = uiautomator2_connection()
-    _log(f'Stating app {app_name}')
+    _log(f'Stating app: {app_name}')
     pkg = android_config.NAME_TO_PACKAGE.get(app_name)
     device.app_start(pkg)
 
@@ -63,6 +63,4 @@ def type_input(text: str) -> None:
 
 
 if __name__ == '__main__':
-    d = u2.connect()  # connect to device
-    d(resourceId='com.whatsapp:id/tab', text='Calls', description='Calls')
-    print(d)
+    pass
