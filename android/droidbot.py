@@ -81,3 +81,6 @@ if __name__ == '__main__':
     droidbot_app_conn.disconnect()
     available_view = filter_views(current_views)
     p = from_view_and_return_in_prompt_action(available_view)
+
+if __name__ == "__main__":
+    init_android_device()

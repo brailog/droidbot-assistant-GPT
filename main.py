@@ -1,89 +1,88 @@
 import time
 import re
-from openai_api.main import assistant_playground
-from utils import save_to_pickle, load_from_pickle
 from ast import literal_eval
-from android.droidbot import get_screen_actions_options, droidbot_init, droidbot_close
-from android.uiautomator2 import start_app, find_and_tap_widget, uiautomator2_connection, type_input
+from android.android_controller import Uiautomator2Interface, Widget
+from pprint import pformat
+from gemini_api.main import GeminiClient
+from gemini_api.main import GeminiClient # Assuming this is your Gemini API client
+from dataclasses import dataclass, field
+
+@dataclass
+class SessionContext:
+    """Keeps track of the session state."""
+    user_goal: str
+    current_screen_context: list[Widget] = field(default_factory=list)
+    current_activity: str | None = None
+    next_action: tuple[str, Widget | None] | None = None
+
+    def update_context(self, widgets: list[Widget], activity: str | None):
+        """Updates the session context with the latest screen widgets and activity."""
+        self.current_screen_context = widgets
+        self.current_activity = activity
+
 
 TAG = '[MAIN] | '
 def _log(msg: str, tag=TAG) -> None:
     print(f'{tag} {msg}')
 
-def send_prompt_to_assistent(prompt: str, assistant_key: str) -> str:
-    android_steps = assistant_playground(prompt, assistant_key)
-
-    try:
-        list_of_steps = android_steps[0].content[0].text.value
-    except IndexError:
-        list_of_steps = ""
-        _log("Unable to get the Android steps")
-
-    return list_of_steps
-
-def __match(prompt_step: str, regex_pattern: str, group=1) -> str:
-    match = re.search(regex_pattern, prompt_step)
+def _match_app_name(user_goal: str) -> str | None:
+    """Extracts the app name from the user's goal using regex."""
+    match = re.search(r'open(?: the)? (.*?) (?:app)?$|launch(?: the)? (.*?) (?:app)?$', user_goal, re.IGNORECASE)
     if match:
-          return match.group(group)
-
-
-def __step_to_android_action_prompt(current_prompt_step: str, screen_options: list[str]) -> str:
-    prompt_options = "And the options are: "
-    action = f'The Android action that need to be done is: {current_prompt_step}'
-    prompt_options += ".\n".join(screen_options)
-    return f'{action}. {prompt_options}'
-
-
-def __log_pprint_list(steps: list[str]) -> None:
-    _log('========== STEPS ==========')
-    for step in steps:
-        _log(step)
+        # Return the first non-None captured group
+        return next((g for g in match.groups() if g is not None), None)
+    return None
 
 def main():
-    TIME_BETWEEN_STEPS = 20
-    user_input = input("What action do you want to do? > ")
-    device = uiautomator2_connection(setup=True)
-    user_prompt_output = send_prompt_to_assistent(user_input, 'asst_MA7NF9enCfctZSe1yRTJaQ45').split('\n')
-    expected_num_steps = len(user_prompt_output)
-    __log_pprint_list(user_prompt_output)
+    gemini_client = GeminiClient()
+    android_client = Uiautomator2Interface()
 
-    for i, step in enumerate(user_prompt_output):
-        iteration = i+1
-        current_prompt_step = step.lower()
-        current_prompt_step = current_prompt_step.split('##')[-1].strip(" ")
-        _log(f' ===== START STEPS ITERATIONS {iteration}/{expected_num_steps} ===== ')
-        _log(f'Current step: {i}#{current_prompt_step}')
-        if 'open the' in current_prompt_step:
-            pattern = r'open the (\w+) app.'
-            app_name = __match(current_prompt_step, pattern)
-            start_app(app_name)
-        elif current_prompt_step:
-            screen_options = get_screen_actions_options()
-            _log(f'Numbers of screen options: {len(screen_options)}')
-            if not screen_options:
-                device.screen_on()
-            android_current_possible_action = __step_to_android_action_prompt(current_prompt_step, screen_options)
-            send_prompt_to_assistent(android_current_possible_action, 'asst_ddWK2VVGe0gYhX0JMC5KAbMx')
-            _log('Prompt output:')
-            _log(android_current_possible_action)
+    action_prompt_template = (
+        """
+I want to choose if the is any new action to do in a Android Screen, the action can be in the OS (Press Back, Press Home), Screen (Swipe, Scroll) and Widget (Tap, type, scroll_to). Using two inforation:
+Android Screen Context:
+User Goal: {user_goal}
+Current Screen Widgets: {screen_widgets}
+Current Android Activity: {android_activity}
 
-            chose_action = literal_eval(android_current_possible_action) # todo improve!!!
-            _log(f' ===== REPORT ITERATION {iteration}/{expected_num_steps}===== ')
-            _log(f'>>> CURRENT ACTION/STEP: {current_prompt_step}')
-            # _log(f'>>> PROMPT OPTION: {prompt_options}')
-            _log(f'>>> CHOSE ACTION: {chose_action}')
-            if 'tap' in current_prompt_step:
-                find_and_tap_widget(chose_action)
-            elif 'type' in current_prompt_step:
-                pattern = r'"([^"]*)"'
-                expected_text_type = __match(current_prompt_step, pattern)
-                if expected_text_type:
-                    _log(f'Typing: {expected_text_type}')   # MAYBE TO TYPE NEED TO CHANGE TO FINDALL!! stable version commit: 1647b3f6daa246c45b0a4a6986ae598eee797f7f
-                    type_input(expected_text_type)
-            else:
-                find_and_tap_widget(chose_action)
-            _log(f'>>> WAIT {TIME_BETWEEN_STEPS}')
-            time.sleep(TIME_BETWEEN_STEPS)
+AVAILABLE ACTIONS: "tap", "type, "swipe_down", "swipe_left", "swipe_right", "open_app", when no action is need "completed"
+
+Return a tuple with the information as follow: (<action_enviremnt (OS, SR, WD)>,<which action (home, back)>,<if needed witch widget>). If you understend that the already is completed return completed for all value
+        """
+    )
+    TIME_BETWEEN_STEPS = 5
+    MAX_STEPS = 1
+
+    user_input = "Open the Play Store app" # input("What action do you want to do? > ")
+
+    prompt_response = gemini_client.generate_text(f"Read, interpret and find the 'app' name to perform the action in the current input: {user_input}.  return only the app name as a single string no other information or content.")
+    app_name = prompt_response
+
+    android_client.search_for_app_via_app_tray(app_name)
+    app_icon = android_client.find_widget({'text':app_name, 'resource_id': 'com.sec.android.app.launcher:id/label'})
+    app_icon.tap()
+
+    _log('1. Initialize Session Context')
+    session = SessionContext(user_goal=user_input)
+
+    _log('2. Start the execution loop')
+    time.sleep(1)
+    for i in range(MAX_STEPS):
+        _log(f'===== STEP {i + 1}/{MAX_STEPS} =====')
+        step_start_time = time.time()
+        session.update_context(
+        android_client.get_interactive_widgets(),
+        android_client.get_current_activity()
+        )
+        cur_step = action_prompt_template.format(user_goal=session.user_goal, screen_widgets=session.current_screen_context, android_activity=session.current_activity)
+        _log(f' CUR TEP  ==== {cur_step}' )
+        prompt_response = gemini_client.generate_text(prompt=action_prompt_template.format(user_goal=session.user_goal, screen_widgets=session.current_screen_context, android_activity=session.current_activity), code_markdown_remove=True)
+
+        _log(prompt_response)
+        
+
+        step_end_time = time.time()
+        _log(f"Step {i + 1} took {step_end_time - step_start_time:.2f} seconds.")
 
 
 if __name__ == '__main__':
