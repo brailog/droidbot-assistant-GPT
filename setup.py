@@ -8,6 +8,7 @@ setup(
         'uiautomator2==2.16.23',
         'openai',
         'packaging==20.9'
+        'google-genai',
     ],
     entry_points={
         'console_scripts': [
