@@ -94,6 +94,8 @@ class Uiautomator2Interface:
             selector['description'] = selector.pop('content_description')
         if 'resource_id' in selector:
             selector['resourceId'] = selector.pop('resource_id')
+        if 'class_name' in selector:
+            selector.pop('class_name')
 
         _log(f"Finding widget with selector: {selector}")
         widget_ui_object = self.device(**selector)
@@ -109,6 +111,7 @@ class Uiautomator2Interface:
     def open_app_tray(self) -> None:
         """Opens the app tray by swiping up from the bottom of the screen."""
         _log("Opening app tray...")
+        self.device.press("home")
         self.swipe_screen('up')
 
     def swipe_screen(self, direction: str) -> None:
@@ -198,8 +201,9 @@ class Uiautomator2Interface:
                 
                 )
                 is_visible = (attributes.get('visible-to-user') == 'true' and attributes.get('enabled') == 'true')
+                is_with_text_descrip = (attributes.get('text') != '' or attributes.get('content-desc') != '')
 
-                if is_interactive and is_visible:
+                if is_interactive and is_visible and is_with_text_descrip:
                     ui_object = self.device(**{k: v for k, v in attributes.items() if k in ['text', 'resourceId', 'description', 'className'] and v})
                     widget = Widget(ui_object=ui_object, raw_attributes=attributes)
                     interactive_widgets.append(widget)

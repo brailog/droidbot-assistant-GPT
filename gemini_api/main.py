@@ -23,13 +23,13 @@ class GeminiClient:
     using Gemini models, designed to be analogous to an OpenAI client.
     """
 
-    def __init__(self, model_name: str = "gemini-2.5-pro"):
+    def __init__(self, model_name: str = "gemini-2.5-flash"):
         """
         Initializes the Gemini client.
 
         Args:
             model_name (str): The name of the Gemini model to use.
-                              Defaults to "gemini-2.5-pro".
+                              Defaults to "gemini-2.5-flash".
         """
         self.model_name = model_name
         self.model = genai.GenerativeModel(self.model_name)
@@ -38,9 +38,10 @@ class GeminiClient:
     def generate_text(
         self,
         prompt: str,
-        temperature: float = 0.5,
+        temperature: float = 0.1,
         max_output_tokens: Optional[int] = None,
-        code_markdown_remove: bool = False
+        code_markdown_remove: bool = False,
+        response_mime_type: str = "text/plain"
     ) -> str:
         """
         Generates text content from a single string prompt.
@@ -59,6 +60,7 @@ class GeminiClient:
         generation_config = genai.types.GenerationConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_mime_type=response_mime_type,
         )
 
         try:
@@ -77,7 +79,7 @@ class GeminiClient:
     def create_chat_completion(
         self,
         messages: List[Dict[str, str]],
-        temperature: float = 0.7,
+        temperature: float = 0.6,
         max_output_tokens: Optional[int] = None
     ) -> str:
         """
