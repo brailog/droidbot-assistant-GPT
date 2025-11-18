@@ -7,6 +7,7 @@ from gemini_api.main import GeminiClient
 from gemini_api.main import GeminiClient # Assuming this is your Gemini API client
 from dataclasses import dataclass, field
 
+
 @dataclass
 class SessionContext:
     """Keeps track of the session state."""
@@ -14,6 +15,7 @@ class SessionContext:
     current_screen_context: list[Widget] = field(default_factory=list)
     current_activity: str | None = None
     next_action: tuple[str, Widget | None] | None = None
+    history: list[dict[str, str]] = field(default_factory=list)
 
     def update_context(self, widgets: list[Widget], activity: str | None):
         """Updates the session context with the latest screen widgets and activity."""
@@ -21,69 +23,110 @@ class SessionContext:
         self.current_activity = activity
 
 
-TAG = '[MAIN] | '
-def _log(msg: str, tag=TAG) -> None:
-    print(f'{tag} {msg}')
+TAG = "[MAIN] | "
 
-def _match_app_name(user_goal: str) -> str | None:
-    """Extracts the app name from the user's goal using regex."""
-    match = re.search(r'open(?: the)? (.*?) (?:app)?$|launch(?: the)? (.*?) (?:app)?$', user_goal, re.IGNORECASE)
-    if match:
-        # Return the first non-None captured group
-        return next((g for g in match.groups() if g is not None), None)
-    return None
+
+def _log(msg: str, tag=TAG) -> None:
+    print(f"{tag} {msg}")
+
 
 def main():
     gemini_client = GeminiClient()
     android_client = Uiautomator2Interface()
 
+#     action_prompt_template = (
+#         """
+# I want to choose if the is any new action to do in a Android Screen, the action can be in the OS (Press Back, Press Home), Screen (Swipe, Scroll) and Widget (Tap, type, scroll_to). Using two inforation:
+# Android Screen Context:
+# User Goal: {user_goal}
+# Current Screen Widgets: {screen_widgets}
+# Current Android Activity: {android_activity}
+# If you are inside the expected app, search for a widget that may help reach the task goal, like search button to tap and search or a widget with a content description with a expected name
+
+# AVAILABLE ACTIONS: "tap", "type, "swipe_down", "swipe_left", "swipe_right", "open_app", when no action is need "completed"
+
+# Return a tuple with the information as follow: (<action_enviremnt (OS, SR, WD)>,<which action (home, back)>,<if needed witch widget>). If you understend that the already is completed return completed for all value
+#         """
+#     )
+
     action_prompt_template = (
         """
-I want to choose if the is any new action to do in a Android Screen, the action can be in the OS (Press Back, Press Home), Screen (Swipe, Scroll) and Widget (Tap, type, scroll_to). Using two inforation:
-Android Screen Context:
+Acessibility describe with app screen is this one and with action can be perform, with paths can navigate based on the widgets and activity information; Return only a tuple like ('JsonLike of selected Widget with attributes', 'action to do in the widget') to be able to help reach the goal and if you think the task is completed return 'None'.
 User Goal: {user_goal}
 Current Screen Widgets: {screen_widgets}
 Current Android Activity: {android_activity}
-
-AVAILABLE ACTIONS: "tap", "type, "swipe_down", "swipe_left", "swipe_right", "open_app", when no action is need "completed"
-
-Return a tuple with the information as follow: (<action_enviremnt (OS, SR, WD)>,<which action (home, back)>,<if needed witch widget>). If you understend that the already is completed return completed for all value
         """
     )
+
     TIME_BETWEEN_STEPS = 5
-    MAX_STEPS = 1
+    MAX_STEPS = 10
 
-    user_input = "Open the Play Store app" # input("What action do you want to do? > ")
+    user_input = input("What action do you want to do? > ") #"open the calculator and do 10 plus 10"  # "Open the Play Store and install 'Clash of Clans' game"#"Play the playlist 'JJ' in Spotify" # input("What action do you want to do? > ")
 
-    prompt_response = gemini_client.generate_text(f"Read, interpret and find the 'app' name to perform the action in the current input: {user_input}.  return only the app name as a single string no other information or content.")
+    prompt_response = gemini_client.generate_text(
+        f"Interpret and find the 'app' name to be open and perform the action in the current input: {user_input}.  return only the app name (if need translete to portuguese-brasil camelcase) as a single string no other information or content."
+    )
     app_name = prompt_response
+    _log(app_name)
 
     android_client.search_for_app_via_app_tray(app_name)
-    app_icon = android_client.find_widget({'text':app_name, 'resource_id': 'com.sec.android.app.launcher:id/label'})
+    time.sleep(0.5)
+    app_icon = android_client.find_widget(
+        {"text": app_name, "resource_id": "com.sec.android.app.launcher:id/label"}
+    )
     app_icon.tap()
 
-    _log('1. Initialize Session Context')
+    _log("1. Initialize Session Context")
     session = SessionContext(user_goal=user_input)
 
-    _log('2. Start the execution loop')
+    _log("2. Start the execution loop")
     time.sleep(1)
     for i in range(MAX_STEPS):
-        _log(f'===== STEP {i + 1}/{MAX_STEPS} =====')
+        _log(f"===== STEP {i + 1}/{MAX_STEPS} =====")
         step_start_time = time.time()
         session.update_context(
-        android_client.get_interactive_widgets(),
-        android_client.get_current_activity()
+            android_client.get_interactive_widgets(),
+            android_client.get_current_activity(),
         )
-        cur_step = action_prompt_template.format(user_goal=session.user_goal, screen_widgets=session.current_screen_context, android_activity=session.current_activity)
-        _log(f' CUR TEP  ==== {cur_step}' )
-        prompt_response = gemini_client.generate_text(prompt=action_prompt_template.format(user_goal=session.user_goal, screen_widgets=session.current_screen_context, android_activity=session.current_activity), code_markdown_remove=True)
+        current_prompt = action_prompt_template.format(
+            user_goal=session.user_goal,
+            screen_widgets=pformat(session.current_screen_context),
+            android_activity=session.current_activity,
+        )
+        _log(f" CUR TEP  ==== {current_prompt}")
 
-        _log(prompt_response)
-        
+        session.history.append({"role": "user", "parts": [current_prompt]})
 
+        prompt_response = gemini_client.create_chat_completion(
+            session.history
+        )
+
+        session.history.append({"role": "model", "parts": [prompt_response]})
+
+        prompt_literal = literal_eval(prompt_response)
+        _log(prompt_literal)
+        if isinstance(prompt_literal, tuple):
+            _log('Inside If?')
+            widget_attributes = literal_eval(prompt_literal[0]) if isinstance(prompt_literal[0], str) else prompt_literal[0]
+        else:
+            try:
+                widget_attributes = prompt_literal[0]
+            except TypeError:
+                break
+
+        _log('===========================================================')
+        _log(widget_attributes)
+        action = prompt_literal[1]
+        _log(action)
+        if "tap" == action or "click" == action:
+            _log(f'Widget to be pressed: {widget_attributes}')
+            tap_widget = android_client.find_widget(widget_attributes)
+            tap_widget.tap()
         step_end_time = time.time()
+        _log(session.history)
         _log(f"Step {i + 1} took {step_end_time - step_start_time:.2f} seconds.")
+        time.sleep(TIME_BETWEEN_STEPS)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
