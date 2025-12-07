@@ -56,6 +56,12 @@ class Uiautomator2Interface:
         self.device = u2.connect(serial)
         if setup:
             self._initial_setup()
+    
+    def _press_back(self):
+        """
+        Press Back (should be a new class method in future)
+        """
+        self.device.press("back")
 
     def _initial_setup(self) -> None:
         """Performs initial setup on the device, like closing recent apps."""
@@ -88,7 +94,10 @@ class Uiautomator2Interface:
         Returns:
             Widget | None: A Widget object for the found element, or None if not found.
         """
-        selector = widget_info.copy() if widget_info else {}
+        selector = {}
+        if isinstance(widget_info, dict):
+            selector = widget_info.copy()
+        
 
         if 'content_description' in selector:
             selector['description'] = selector.pop('content_description')
@@ -166,11 +175,12 @@ class Uiautomator2Interface:
         search_bar_widget = self.find_widget(search_bar_info)
         if search_bar_widget:
             search_bar_widget.tap()
-            time.sleep(1)
+            time.sleep(0.5)
             search_src_widget = self.find_widget(search_src_info)
             search_src_widget.tap()
-            time.sleep(1)
-            self.device.shell(f'input text "{app_name}"')
+            time.sleep(0.5)
+            search_src_widget.type_text(text=app_name)
+            time.sleep(0.5)
             self.device.press("back")
 
 
@@ -203,7 +213,7 @@ class Uiautomator2Interface:
                 is_visible = (attributes.get('visible-to-user') == 'true' and attributes.get('enabled') == 'true')
                 is_with_text_descrip = (attributes.get('text') != '' or attributes.get('content-desc') != '')
 
-                if is_interactive and is_visible and is_with_text_descrip:
+                if (is_interactive or is_visible) and is_with_text_descrip:
                     ui_object = self.device(**{k: v for k, v in attributes.items() if k in ['text', 'resourceId', 'description', 'className'] and v})
                     widget = Widget(ui_object=ui_object, raw_attributes=attributes)
                     interactive_widgets.append(widget)

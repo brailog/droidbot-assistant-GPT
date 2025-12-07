@@ -59,9 +59,9 @@ Current Android Activity: {android_activity}
     )
 
     TIME_BETWEEN_STEPS = 5
-    MAX_STEPS = 10
+    MAX_STEPS = 20
 
-    user_input = input("What action do you want to do? > ") #"open the calculator and do 10 plus 10"  # "Open the Play Store and install 'Clash of Clans' game"#"Play the playlist 'JJ' in Spotify" # input("What action do you want to do? > ")
+    user_input = "open the Contatos app, find the 'Ana Santiago' contact and make a call"#"open the calculator and do 11 plus 34" #  #"open the calculator and do 10 plus 10"  # "Open the Play Store and install 'Clash of Clans' game"#"Play the playlist 'JJ' in Spotify" # input("What action do you want to do? > ")
 
     prompt_response = gemini_client.generate_text(
         f"Interpret and find the 'app' name to be open and perform the action in the current input: {user_input}.  return only the app name (if need translete to portuguese-brasil camelcase) as a single string no other information or content."
@@ -84,16 +84,17 @@ Current Android Activity: {android_activity}
     for i in range(MAX_STEPS):
         _log(f"===== STEP {i + 1}/{MAX_STEPS} =====")
         step_start_time = time.time()
+        available_widgets = android_client.get_interactive_widgets()
+        current_android_activity = android_client.get_current_activity()
         session.update_context(
-            android_client.get_interactive_widgets(),
-            android_client.get_current_activity(),
+            available_widgets,
+            current_android_activity,
         )
         current_prompt = action_prompt_template.format(
             user_goal=session.user_goal,
             screen_widgets=pformat(session.current_screen_context),
             android_activity=session.current_activity,
         )
-        _log(f" CUR TEP  ==== {current_prompt}")
 
         session.history.append({"role": "user", "parts": [current_prompt]})
 
@@ -103,27 +104,30 @@ Current Android Activity: {android_activity}
 
         session.history.append({"role": "model", "parts": [prompt_response]})
 
-        prompt_literal = literal_eval(prompt_response)
-        _log(prompt_literal)
-        if isinstance(prompt_literal, tuple):
-            _log('Inside If?')
-            widget_attributes = literal_eval(prompt_literal[0]) if isinstance(prompt_literal[0], str) else prompt_literal[0]
+        prompt_response_literal = literal_eval(prompt_response)
+        _log(prompt_response_literal)
+        if prompt_response_literal and isinstance(prompt_response_literal, tuple):
+            widget_attributes = literal_eval(prompt_response_literal[0])
+            widget_action = prompt_response_literal[1]
         else:
-            try:
-                widget_attributes = prompt_literal[0]
-            except TypeError:
-                break
+            # No valid reponse from the API. Probably reach the goal.
+            break
 
-        _log('===========================================================')
-        _log(widget_attributes)
-        action = prompt_literal[1]
-        _log(action)
-        if "tap" == action or "click" == action:
+        if "tap" == widget_action or "click" == widget_action:
             _log(f'Widget to be pressed: {widget_attributes}')
             tap_widget = android_client.find_widget(widget_attributes)
             tap_widget.tap()
+        if "type" in widget_action:
+            re_pattern = r"type (.+)"
+            match = re.match(re_pattern, widget_action)
+            if match:
+                content_to_type = match.group(1)
+            type_widget = android_client.find_widget(widget_attributes)
+            type_widget.type_text(content_to_type)
+            android_client._press_back()
+
+
         step_end_time = time.time()
-        _log(session.history)
         _log(f"Step {i + 1} took {step_end_time - step_start_time:.2f} seconds.")
         time.sleep(TIME_BETWEEN_STEPS)
 
