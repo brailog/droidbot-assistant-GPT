@@ -1,45 +1,16 @@
 import time
-from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 import uiautomator2 as u2
+import os
+import zipfile
+import tempfile
+from android.widget_object import Widget
 
 TAG = '[UIAUTOMATOR2]'
 
-from android import android_config
 
 def _log(msg: str, tag=TAG) -> None:
     print(f'[{tag}] | {msg}')
-
-
-class Widget:
-    """Represents an interactive UI widget and provides methods to interact with it."""
-    def __init__(self, ui_object: u2.UiObject, raw_attributes: dict[str, any]):
-        self.ui_object = ui_object
-        self.raw_attributes = raw_attributes
-        self.text: str | None = raw_attributes.get('text')
-        self.resource_id: str | None = raw_attributes.get('resourceId') or raw_attributes.get('resource-id')
-        self.content_description: str | None = raw_attributes.get('content-desc')
-        self.class_name: str | None = raw_attributes.get('class')
-        self.bounds: str | None = raw_attributes.get('bounds')
-        self.clickable: bool = raw_attributes.get('clickable') == 'true'
-        self.long_clickable: bool = raw_attributes.get('long-clickable') == 'true'
-        self.checkable: bool = raw_attributes.get('checkable') == 'true'
-        self.scrollable: bool = raw_attributes.get('scrollable') == 'true'
-        self.is_password: bool = raw_attributes.get('password') == 'true'
-
-    def __repr__(self) -> str:
-        return (f"Widget(text='{self.text}', resource_id='{self.resource_id}', "
-                f"content_description='{self.content_description}', class_name='{self.class_name}')")
-
-    def tap(self) -> None:
-        """Taps on this widget."""
-        _log(f"Tapping on widget: {self}")
-        self.ui_object.click()
-
-    def type_text(self, text: str) -> None:
-        """Types text into this widget."""
-        _log(f"Typing '{text}' into widget: {self}")
-        self.ui_object.set_text(text)
 
 class Uiautomator2Interface:
     """A client for interacting with an Android device using uiautomator2."""
@@ -224,8 +195,55 @@ class Uiautomator2Interface:
             _log(f"[ERROR] Failed to get and parse interactive widgets: {e}")
             return []
 
+    def take_screenshot_and_dump_ui(self, filename_prefix: str = "screen_capture") -> str | None:
+        """
+        Takes a screenshot and dumps the UI hierarchy, then zips them into a single file.
+
+        Args:
+            filename_prefix (str): A prefix for the output filenames.
+
+        Returns:
+            str | None: The path to the created zip file, or None if an error occurred.
+        """
+        _log("Taking screenshot and dumping UI hierarchy...")
+        temp_dir = None
+        t = time.time()
+        try:
+            temp_dir = tempfile.mkdtemp()
+            
+            screenshot_file_path = os.path.join(temp_dir, f"{filename_prefix}.png")
+            ui_dump_file_path = os.path.join(temp_dir, f"{filename_prefix}.xml")
+            zip_output_path = f"{filename_prefix}_{t}.zip"
+
+            pil_image = self.device.screenshot()
+            if pil_image:
+                pil_image.save(screenshot_file_path)
+            else:
+                _log("[WARNING] Screenshot capture returned None.")
+                return None\
+
+            xml_dump_content = self.device.dump_hierarchy()
+            with open(ui_dump_file_path, 'w', encoding='utf-8') as f:
+                f.write(xml_dump_content)
+
+            with zipfile.ZipFile(zip_output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                zf.write(screenshot_file_path, os.path.basename(screenshot_file_path))
+                zf.write(ui_dump_file_path, os.path.basename(ui_dump_file_path))
+
+            zip_output_path = f"{temp_dir}/{zip_output_path}"
+            _log(f"Screenshot and UI dump zipped to: {zip_output_path}")
+            return zip_output_path
+
+        except Exception as e:
+            _log(f"[ERROR] Failed to capture screenshot and UI dump: {e}")
+            return None
+
+
 if __name__ == '__main__':
     from pprint import pprint as pp
     uii = Uiautomator2Interface()
     #uii.find_widget({'text': 'Agenda'}).tap()
-    pp(uii.get_interactive_widgets())
+#    pp(uii.get_interactive_widgets())
+    zip_file = uii.take_screenshot_and_dump_ui("test_capture")
+    if zip_file:
+        _log(f"Generated zip file: {zip_file}")
